@@ -1,4 +1,5 @@
 format default;
+clear all
 % heading angle
 phi = 90 * pi / 180;
 % wheel radius
@@ -34,7 +35,10 @@ I_w = 0.005;
 I_m = 0.0025;
 % I in matrix
 I = ((m_c * d^2) + 2*m_w*(b^2 + d^2) + I_c + 2*I_m);
-
+% initial state
+q_0 = [0, 0, phi, 0, 0];
+% error between the desired velocity and the current velocity
+v = [v_d(1) - theta_dot_r; v_d(2) - theta_dot_l];
 
 % ________Path related variables______%
 % Radius of circular path
@@ -59,8 +63,8 @@ h = 0.02;
 A = -1;
 B = 1;
 C = 0;
-x_c = 0
-y_c = 0
+x_c = 0;
+y_c = 0;
 J_h_1 = (1/sqrt(A^2 + B^2)).*[A, B, (B*L_a*cos(phi) - A*L_a*sin(phi)), 0, 0];
 J_h_2 = [r/2, r/2];
 % 2*2 matrix
@@ -68,31 +72,77 @@ phi_func = [J_h_1 * mat_S; J_h_2];
 phi_func_diff = diff(phi_func);
 det_phi_func =((r.^2)*(d + L_a)*(B*cos(phi) - A*sin(phi)))/(2*b*sqrt(A^2 + B^2));
 det_straightpath = det(phi_func);
-% error between the desired velocity and the current velocity
-v = [v_d(1) - theta_dot_r; v_d(2) - theta_dot_l];
+
 phi_func_inv = inv(phi_func);
-u = phi_func_inv * (v - phi_func_diff * niu);
-x_dot = [mat_S*niu; 0; 0] + [0 0;0 0;0 0;0 0;0 0;1 0;0 1]*niu;
+
 
 % the coordinates of the point P_l 
-x_l = x_c + L_a * cos(phi)
-y_l = y_c + L_a * sin(phi)
+x_l = x_c + L_a * cos(phi);
+y_l = y_c + L_a * sin(phi);
 h1= (-x_l + y_l)/2
 h2 = r*(v(1) + v(2))/2
 
-% position model
-y_k = [h1, h2]
-C_r = [1,  0, 0, 0]
-C_a = [C_r, 0]
-y_k_hat = C_a * 
+% discretization of position model
+% matrix for the discrete time state space
+A_pos =[0, 1; 0, 0];
+B_pos = [0;1];
+C_pos = [1, 0];
+sys_pos = ss(A_pos, B_pos, C_pos, 0);
+sys_pos_discrete= c2d(sys_pos, h);
+phi_r_pos = sys_pos_discrete.A;
+gamma_r_pos = sys_pos_discrete.B;
+C_r_pos = sys_pos_discrete.C;
+% discretization of velocity model
+A_vel = [1 h; 0 0];
+B_vel = [0; 1];
+C_vel = [1 0];
+sys_vel = ss(A_vel, B_vel, C_vel, 0);
+sys_vel_discrete = c2d(sys_vel, h);
+phi_r_vel = sys_vel_discrete.A;
+gamma_r_vel = sys_vel_discrete.B;
+C_r_vel = sys_vel_discrete;
+y_k = [h1, h2];
+% C_a = [C_r, 0]
+% y_k_hat = C_a * [phi_func_r - gamma_r*L, 0; 0, 1]*
 Q_x_r = 10^(-5)*eye(4)
 Q_p_k = 10^(-4)
 R_k = 10^(-3)
-P_0 = [Q_x_r  0; ]
-% Kalman gain
-K_k = [0.1407, 0.3018, 0.2931, 0.2931, 0.2931].T
+%P_0 = [Q_x_r  0; ]
+% Kalman gain for position model
+K_k_pos = [0.1407, 0.3018, 0.2931, 0.2931, 0.2931]'
+% Kalman gain for velocity model
+K_k_vel = [0.0683 0.0965 0.0965]'
 phi_1 = [1, h; 0, 1]
 gamma_1 = [h^2/2; h]
+% pole of the position model
+P = pole(sys_pos)
+L = acker(phi_r_pos, gamma_r_pos, P) 
+
+% position update
+% v_1_update =  K_k*q_0
+
+% the time duration of the experiment
+s = 10;
+pos_x_hat = zeros(5, s+1);
+vel_x_hat = zeros(3, s+1);
+pos_y = zeros(s+1, 5);
+vel_y = zeros(s+1, 3);
+pos_AOB_A = zeros(5, 5);
+pos_AOB_A(1:2, 1:2) = phi_r_pos - gamma_r_pos*L;
+pos_AOB_A(5, 5) = 1;
+vel_AOB_A = zeros(3, 3);
+vel_AOB_A(1:2, 1:2) = phi_r_pos - gamma_r_pos*L;
+vel_AOB_A(3, 3) = 1;
+% AOB_B = [gamma_r; 0]
+C_a_pos = [1 0 0 0 0];
+C_a_vel = [1 0 0];
+for(t = 1: s)
+   pos_x_hat(:, t+1) = pos_AOB_A*pos_x_hat(:, t) + K_k_pos*(pos_y(t) - C_a_pos*pos_x_hat(:, t));
+   vel_x_hat(:, t+1) = vel_AOB_A*vel_x_hat(:, t) + K_k_vel*(vel_y(t) - C_a_vel*vel_x_hat(:, t));
+   u = phi_func_inv * (v - phi_func_diff * niu);
+   x_dot = [mat_S*niu; 0; 0] + [0 0;0 0;0 0;0 0;0 0;1 0;0 1]*niu;
+end
+% new_x_dot = 
 % plot a straight line
     b0 = 3;
     b1 = 4;
