@@ -6,7 +6,8 @@ phi = q(3);
 % wheel angular velocity
 theta_dot_r = q(6);
 theta_dot_l = q(7);
-
+% vector of wheel velocities
+niu = [theta_dot_r; theta_dot_l]
 % wheel radius
 r = 0.17;
 % distance from the wheel to the center of mass
@@ -18,8 +19,6 @@ d = 0.05;
 % look ahead distance
 L_a = 0.1;
 
-% vector of wheel velocities
-niu = [theta_dot_r; theta_dot_l];  
 % desired output
 output_desired  = [0, 1.414];
 % Mass of chassis
@@ -115,33 +114,54 @@ P_vel = pole(sys_vel);
 L_vel = acker(phi_r_vel, gamma_r_vel, P_vel);
 % L_vel = place(phi_r_vel, gamma_r_vel, P_vel);
 
-pos_AOB_A = zeros(5, 5);
-pos_AOB_A(1:2, 1:2) = phi_r_pos - gamma_r_pos*K_k_pos(1);
-pos_AOB_A(5, 5) = 1;
-vel_AOB_A = zeros(3, 3);
-vel_AOB_A(1:2, 1:2) = phi_r_vel - gamma_r_vel*K_k_vel(1);
-vel_AOB_A(3, 3) = 1;
-pos_AOB_B = [gamma_r_pos; 0; 0; 0;];
-vel_AOB_B = [gamma_r_vel; 0;];
+% pos_AOB_A = zeros(3, 3);
+% pos_AOB_A(1:2, 1:2) = phi_r_pos;
+% pos_AOB_A(3, 1:2) = gamma_r_pos;
+% pos_AOB_A(3, 3) = 1;
+% pos_AOB_B = [gamma_r_pos; 0];
+% pos_AOB_C =  [1 0 0];
+% sys_AOB_pos = ss(pos_AOB_A, pos_AOB_B, pos_AOB_C, 0);
+% AOB_L_pos = acker(pos_AOB_A, pos_AOB_B, pole(sys_AOB_pos));
+% Construct the state space for the AOB algorithm
+pos_AOB_closed_loop_A = zeros(5, 5);
+pos_AOB_closed_loop_A(1:2, 1:2) = phi_r_pos - gamma_r_pos*L_pos;
+pos_AOB_closed_loop_A(5, 5) = 1;
+vel_AOB_closed_loop_A = zeros(3, 3);
+vel_AOB_closed_loop_A(1:2, 1:2) = phi_r_vel - gamma_r_vel*L_vel;
+vel_AOB_closed_loop_A(3, 3) = 1;
+pos_AOB_closed_loop_B = [gamma_r_pos; 0; 0; 0;];
+vel_AOB_closed_loop_B = [gamma_r_vel; 0;];
 C_a_pos = [1 0 0 0 0];
 C_a_vel = [1 0 0];
 h1= (-x_l + y_l)/2;
 h2 = r*(niu(1) + niu(2))/2;
 pos_output = h1;
 vel_output = h2;
-pos_x_hat(:, t+1) = pos_AOB_A*pos_x_hat(:, t) + pos_AOB_B*output_desired(1) + K_k_pos*(pos_output - C_a_pos*pos_x_hat(:, t));
-vel_x_hat(:, t+1) = vel_AOB_A*vel_x_hat(:, t) + vel_AOB_B*output_desired(2) + K_k_vel*(vel_output - C_a_vel*vel_x_hat(:, t));
+pos_x_hat(:, t+1) = pos_AOB_closed_loop_A*pos_x_hat(:, t) + pos_AOB_closed_loop_B*output_desired(1) + K_k_pos*(pos_output - C_a_pos*pos_x_hat(:, t));
+vel_x_hat(:, t+1) = vel_AOB_closed_loop_A*vel_x_hat(:, t) + vel_AOB_closed_loop_B*output_desired(2) + K_k_vel*(vel_output - C_a_vel*vel_x_hat(:, t));
 
-% pos_x_hat(:, t+1) = pos_AOB_A*pos_x_hat(:, t) + pos_AOB_B*output_desired(1) + K_k_pos(1:3)*(pos_output - C_a_pos*pos_x_hat(:, t))
-% vel_x_hat(:, t+1) = vel_AOB_A*vel_x_hat(:, t) + vel_AOB_B*output_desired(2) + K_k_vel(1)*(vel_output - C_a_vel*vel_x_hat(:, t))
+% x_l_new = pos_x_hat(1, t+1) + L_a * cos(pos_x_hat(3, t+1));
+% y_l_new = pos_x_hat(2, t+1) + L_a * sin(pos_x_hat(3, t+1));
+% h1_est = (-x_l_new + y_l_new)/2;
+% h2_est = r*(vel_x_hat(1, t+1) + vel_x_hat(2, t+1))/2;
+% sys_AOB_pos = ss(pos_AOB_closed_loop_A, pos_AOB_closed_loop_B, C_a_pos, 0);
+% sys_AOB_vel = ss(vel_AOB_closed_loop_A, vel_AOB_closed_loop_B, C_a_vel, 0);
+% sys_AOB_pos_discrete = c2d(sys_AOB_pos, h);
+% sys_AOB_pos_discrete_pole = pole(sys_AOB_pos);
+% sys_AOB_vel_discrete_pole = pole(sys_AOB_vel);
+% L_AOB_pos = acker(pos_AOB_A, pos_AOB_B, sys_AOB_pos_discrete_pole); 
+% L_AOB_vel = place(vel_AOB_closed_loop_A, vel_AOB_closed_loop_B, sys_AOB_vel_discrete_pole);
 
-x_l_new = pos_x_hat(1, t) + L_a * cos(pos_x_hat(3, t))
-y_l_new = pos_x_hat(2, t) + L_a * sin(pos_x_hat(3, t))
-h1_est = (-x_l_new + y_l_new)/2;
-h2_est = r*(vel_x_hat(1, t) + vel_x_hat(2, t))/2;
 % vector of externel input
-v = [output_desired(1) - h1_est; output_desired(2) - h2_est];
+v = [output_desired(1) - L_pos*pos_x_hat(1:2, t+1) + pos_x_hat(5, t+1); output_desired(2) - L_vel*vel_x_hat(1:2, t+1) + vel_x_hat(3, t+1)];
 
-u = phi_func_inv * (v - phi_func_diff * niu)
-x_dot = [mat_S*niu; 0; 0] + [0 0;0 0;0 0;0 0;0 0;1 0;0 1]*u;
+% niu_update = [vel_x_hat(1, t+1); vel_x_hat(2, t+1)];  
+u = phi_func_inv * (v - phi_func_diff * niu);
+% phi_update = pos_x_hat(3, t+1);
+% mat_S_update = [c*(b*cos(phi_update) - d*sin(phi_update)) c*(b*cos(phi_update) + d*sin(phi_update));
+%         c*(b*sin(phi_update) + d*cos(phi_update)) c*(b*sin(phi_update) - d*cos(phi_update));
+%         c -c;
+%         1 0;
+%         0 1];
+x_dot = [mat_S*niu; 0; 0] + [0 0;0 0;0 0;0 0;0 0;1 0;0 1]*u
 q_dot = x_dot';
